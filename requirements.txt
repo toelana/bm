@@ -1,4 +1,4 @@
-requests
+aiohttp
 colorama
-websocket
-websocket-client
+Faker
+fake-useragent

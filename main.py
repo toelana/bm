@@ -1,282 +1,321 @@
-import requests
-import time
-import os
-import threading
+import asyncio
+import aiohttp
 import random
-import websocket
-from datetime import datetime
+import json
+from faker import Faker
+from fake_useragent import UserAgent
+import urllib.parse
+from typing import List, Optional
+import os
+from urllib.parse import urlparse, parse_qs
 from colorama import init, Fore, Back, Style
+import time
+from datetime import datetime
 
 init(autoreset=True)
+def display_header():
+    print(f"""
+{Fore.CYAN + Style.BRIGHT}
+     _____ _         _   _____         _   
+    | __  | |___ ___| |_|     |___ ___| |_ 
+    | __ -| | . |  _| '_| | | | -_|_ -|   |
+    |_____|_|___|___|_,_|_|_|_|___|___|_|_| 
+            Auto Referral Script
+{Style.RESET_ALL}
+{Fore.YELLOW}╔════════════════════════════════════════════════╗
+║  {Fore.GREEN}• Author: IM-Hanzou                           {Fore.YELLOW}║
+║  {Fore.GREEN}• Github: github.com/im-hanzou                {Fore.YELLOW}║
+╚════════════════════════════════════════════════╝{Style.RESET_ALL}
+    """)
 
-def print_banner():
-    banner = f"""
-{Fore.CYAN}{Style.BRIGHT}╔══════════════════════════════════════════════╗
-║          BlockMesh Network AutoBot           ║
-║     Github: https://github.com/IM-Hanzou     ║
-║      Welcome and do with your own risk!      ║
-╚══════════════════════════════════════════════╝
-"""
-    print(banner)
+def log_info(message: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.GREEN}INFO {Fore.WHITE}→ {message}")
 
-proxy_tokens = {}
+def log_success(message: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.GREEN}SUCCESS {Fore.WHITE}→ {message}")
 
-def generate_download_speed():
-    return round(random.uniform(0.0, 10.0), 16)
+def log_error(message: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.RED}ERROR {Fore.WHITE}→ {message}")
 
-def generate_upload_speed():
-    return round(random.uniform(0.0, 5.0), 16)
+def log_warning(message: str):
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.YELLOW}WARNING {Fore.WHITE}→ {message}")
 
-def generate_latency():
-    return round(random.uniform(20.0, 300.0), 16)
+class TempMailAPI:
+    def __init__(self, api_key: str = ''):
+        self.api_key = api_key
+        self.base_url = 'https://api.tempmail.lol'
 
-def generate_response_time():
-    return round(random.uniform(200.0, 600.0), 1)
+    async def create_inbox(self) -> dict:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.base_url}/generate") as response:
+                data = await response.json()
+                return {
+                    'address': data['address'],
+                    'token': data['token']
+                }
 
-def get_ip_info(ip_address):
-    try:
-        response = requests.get(f"https://ipwhois.app/json/{ip_address}")
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as err:
-        print(f"{Fore.RED}Failed to get IP info: {err}")
-        return None
+    async def check_inbox(self, token: str) -> List[dict]:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.base_url}/auth/{token}") as response:
+                data = await response.json()
+                return data.get('email', [])
 
-def connect_websocket(email, api_token):
-    try:
-        import websocket._core as websocket_core
-        ws = websocket_core.create_connection(
-            f"wss://ws.blockmesh.xyz/ws?email={email}&api_token={api_token}",
-            timeout=10
-        )
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.GREEN} Connected to WebSocket")
-        ws.close()
-    except Exception as e:
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.YELLOW} WebSocket connection OK")
+class RegistrationBot:
+    def __init__(self):
+        self.API_KEY = ''
+        self.fake = Faker()
+        self.ua = UserAgent()
+        self.temp_mail = TempMailAPI(self.API_KEY)
 
-def submit_bandwidth(email, api_token, ip_info, proxy_config):
-    if not ip_info:
-        return
-    
-    payload = {
-        "email": email,
-        "api_token": api_token,
-        "download_speed": generate_download_speed(),
-        "upload_speed": generate_upload_speed(),
-        "latency": generate_latency(),
-        "city": ip_info.get("city", "Unknown"),
-        "country": ip_info.get("country_code", "XX"),
-        "ip": ip_info.get("ip", ""),
-        "asn": ip_info.get("asn", "AS0").replace("AS", ""),
-        "colo": "Unknown"
-    }
-    
-    try:
-        response = requests.post(
-            "https://app.blockmesh.xyz/api/submit_bandwidth",
-            json=payload,
-            headers=submit_headers,
-            proxies=proxy_config
-        )
-        response.raise_for_status()
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.GREEN} Bandwidth submitted for {ip_info.get('ip')}")
-    except requests.RequestException as err:
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.RED} Failed to submit bandwidth: {err}")
-
-def get_and_submit_task(email, api_token, ip_info, proxy_config):
-    if not ip_info:
-        return
-        
-    try:
-        response = requests.post(
-            "https://app.blockmesh.xyz/api/get_task",
-            json={"email": email, "api_token": api_token},
-            headers=submit_headers,
-            proxies=proxy_config
-        )
-        response.raise_for_status()
+    def load_proxies(self) -> List[str]:
         try:
-            task_data = response.json()
-        except:
-            print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.YELLOW} Invalid task response format")
-            return
-        
-        if not task_data or "id" not in task_data:
-            print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.YELLOW} No Task Available")
-            return
-            
-        task_id = task_data["id"]
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.GREEN} Got task: {task_id}")
-        time.sleep(random.randint(60, 120))
-        
-        submit_url = f"https://app.blockmesh.xyz/api/submit_task"
-        params = {
-            "email": email,
-            "api_token": api_token,
-            "task_id": task_id,
-            "response_code": 200,
-            "country": ip_info.get("country_code", "XX"),
-            "ip": ip_info.get("ip", ""),
-            "asn": ip_info.get("asn", "AS0").replace("AS", ""),
-            "colo": "Unknown",
-            "response_time": generate_response_time()
-        }
-        
-        response = requests.post(
-            submit_url,
-            params=params,
-            data="0" * 10,
-            headers=submit_headers,
-            proxies=proxy_config
+            with open('proxies.txt', 'r') as f:
+                proxies = [line.strip() for line in f if line.strip()]
+                if not proxies:
+                    log_warning("Proxy file is empty or not found. Continuing without proxy.")
+                return proxies
+        except Exception as e:
+            log_warning(f"Error reading proxies.txt: {e}. Continuing without proxy.")
+            return []
+
+    async def get_ip_address(self, session, proxy=None):
+        try:
+            async with session.get('https://api.ipify.org?format=json', proxy=proxy) as response:
+                data = await response.json()
+                return data['ip']
+        except Exception as e:
+            return "Unable to fetch IP"
+
+    def get_random_proxy(self, proxies: List[str]) -> Optional[str]:
+        return random.choice(proxies) if proxies else None
+
+    @staticmethod
+    def extract_ref_code_from_url(url: str) -> str:
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        ref_code = params.get('invite_code', [None])[0]
+        if not ref_code:
+            log_error("No invite_code found in the URL.")
+            exit(1)
+        return ref_code
+
+    @staticmethod
+    def extract_confirmation_link(aws_tracking_link: str) -> str:
+        decoded_link = urllib.parse.unquote(
+            aws_tracking_link.split("L0/")[1].split("/1/")[0]
         )
-        response.raise_for_status()
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.GREEN} Task submitted: {task_id}")
-    except requests.RequestException as err:
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.RED} Failed to process task: {err}")
+        return decoded_link
 
-print_banner()
-print(f"{Fore.YELLOW}Please Login to your Blockmesh Account first.{Style.RESET_ALL}\n")
-email_input = input(f"{Fore.LIGHTBLUE_EX}Enter Email: {Style.RESET_ALL}")
-password_input = input(f"{Fore.LIGHTBLUE_EX}Enter Password: {Style.RESET_ALL}")
+    async def check_inbox_with_retry(self, token: str, max_retries: int = 10) -> List[dict]:
+        for retry in range(max_retries):
+            try:
+                emails = await self.temp_mail.check_inbox(token)
+                if emails:
+                    log_success("Emails found in inbox")
+                    return emails
+                log_info(f"Waiting for confirmation email... ")
+                await asyncio.sleep(5)
+            except Exception as e:
+                log_error(f"Error checking inbox: {e}")
+                await asyncio.sleep(5)
+        log_error("Max retries reached. No emails found.")
+        return []
 
-login_endpoint = "https://api.blockmesh.xyz/api/get_token"
-report_endpoint = "https://app.blockmesh.xyz/api/report_uptime?email={email}&api_token={api_token}&ip={ip}"
+    def save_credentials(self, email: str, password: str, token: str, confirmation_link: str, ip_address: str):
+        credentials = (
+            f"Email: {email}\n"
+            f"Password: {password}\n"
+            f"Temporary Email Token: {token}\n"
+            f"Confirmation Link: {confirmation_link}\n"
+            f"IP Address: {ip_address}\n"
+            f"{'-' * 50}\n\n"
+        )
+        try:
+            with open('accounts.txt', 'a') as f:
+                f.write(credentials)
+            log_success(f"Credentials saved to accounts.txt")
+        except Exception as e:
+            log_error(f"Error saving credentials: {e}")
 
-login_headers = {
-    "accept": "*/*",
-    "content-type": "application/json",
-    "origin": "https://app.blockmesh.xyz",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-}
-
-report_headers = {
-    "accept": "*/*",
-    "content-type": "text/plain;charset=UTF-8",
-    "origin": "chrome-extension://obfhoiefijlolgdmphcekifedagnkfjp",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-}
-
-submit_headers = {
-    "accept": "*/*",
-    "content-type": "application/json",
-    "origin": "chrome-extension://obfhoiefijlolgdmphcekifedagnkfjp",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-}
-
-proxy_list_path = "proxies.txt"
-proxies_list = []
-
-if os.path.exists(proxy_list_path):
-    with open(proxy_list_path, "r") as file:
-        proxies_list = file.read().splitlines()
-        print(f"{Fore.GREEN}[✓] Loaded {len(proxies_list)} proxies from proxies.txt")
-else:
-    print(f"{Fore.RED}[×] proxies.txt not found!")
-    exit()
-
-def format_proxy(proxy_string):
-    proxy_type, address = proxy_string.split("://")
-    
-    if "@" in address:
-        credentials, host_port = address.split("@")
-        username, password = credentials.split(":")
-        host, port = host_port.split(":")
-        proxy_dict = {
-            "http": f"{proxy_type}://{username}:{password}@{host}:{port}",
-            "https": f"{proxy_type}://{username}:{password}@{host}:{port}"
-        }
-    else:
-        host, port = address.split(":")
-        proxy_dict = {
-            "http": f"{proxy_type}://{host}:{port}",
-            "https": f"{proxy_type}://{host}:{port}"
-        }
-        
-    return proxy_dict, host
-
-def authenticate(proxy):
-    proxy_config, ip_address = format_proxy(proxy)
-    
-    if proxy in proxy_tokens:
-        return proxy_tokens[proxy], ip_address
-        
-    login_data = {"email": email_input, "password": password_input}
-    
-    try:
-        response = requests.post(login_endpoint, json=login_data, headers=login_headers, proxies=proxy_config)
-        response.raise_for_status()
-        auth_data = response.json()
-        api_token = auth_data.get("api_token")
-        
-        proxy_tokens[proxy] = api_token
-        
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.GREEN} Login successful {Fore.MAGENTA}|{Fore.LIGHTYELLOW_EX} {ip_address} {Style.RESET_ALL}")
-        return api_token, ip_address
-    except requests.RequestException as err:
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.RED} Login failed {Fore.MAGENTA}|{Fore.LIGHTYELLOW_EX} {ip_address}: {err}{Style.RESET_ALL}")
-        return None, None
-
-def send_uptime_report(api_token, ip_addr, proxy):
-    proxy_config, _ = format_proxy(proxy)
-    formatted_url = report_endpoint.format(email=email_input, api_token=api_token, ip=ip_addr)
-    
-    try:
-        response = requests.post(formatted_url, headers=report_headers, proxies=proxy_config)
-        response.raise_for_status()
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.LIGHTGREEN_EX} PING successful {Fore.MAGENTA}|{Fore.LIGHTYELLOW_EX} {ip_addr} {Fore.MAGENTA}| {Fore.LIGHTWHITE_EX}{api_token}")
-    except requests.RequestException as err:
-        if proxy in proxy_tokens:
-            del proxy_tokens[proxy]
-        print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.RED} Failed to PING {Fore.MAGENTA}|{Fore.LIGHTYELLOW_EX} {ip_addr}: {err}{Style.RESET_ALL}")
-
-def process_proxy(proxy):
-    first_run = True
-    while True:
-        if first_run or proxy not in proxy_tokens:
-            api_token, ip_address = authenticate(proxy)
-            first_run = False
-        else:
-            api_token = proxy_tokens[proxy]
-            proxy_config, ip_address = format_proxy(proxy)
+    async def create_and_register(self, refcode: str, registration_number: int):
+        try:
+            log_info(f"Starting registration #{registration_number}")
             
-        if api_token:
-            proxy_config, _ = format_proxy(proxy)
-            ip_info = get_ip_info(ip_address)
+            proxies = self.load_proxies()
+            proxy = self.get_random_proxy(proxies)
             
-            #connect_websocket(email_input, api_token)
-            time.sleep(random.randint(60, 120))
-            
-            submit_bandwidth(email_input, api_token, ip_info, proxy_config)
-            time.sleep(random.randint(60, 120))
-            
-            get_and_submit_task(email_input, api_token, ip_info, proxy_config)
-            time.sleep(random.randint(60, 120))
-            
-            send_uptime_report(api_token, ip_address, proxy)
-            time.sleep(random.randint(900, 1200))
-        
-        time.sleep(10)
+            async with aiohttp.ClientSession() as session:
+                if proxy:
+                    log_info(f"Using proxy: {Fore.CYAN}{proxy}")
+                    ip_address = await self.get_ip_address(session, proxy)
+                    log_info(f"Using IP address: {Fore.CYAN}{ip_address}")
+                else:
+                    log_info("No proxy used")
+                    ip_address = await self.get_ip_address(session)
+                    log_info(f"Using IP address: {Fore.CYAN}{ip_address}")
 
-def main():
-    print(f"\n{Style.BRIGHT}Starting ...")
-    threads = []
-    for proxy in proxies_list:
-        thread = threading.Thread(target=process_proxy, args=(proxy,))
-        thread.daemon = True
-        threads.append(thread)
-        thread.start()
-        time.sleep(1)
+                inbox = await self.temp_mail.create_inbox()
+                
+                rand_pass = self.fake.password()
+                
+                log_success(f"Credentials generated:")
+                print(f"{Fore.WHITE}Email: {Fore.CYAN}{inbox['address']}")
+                print(f"{Fore.WHITE}Password: {Fore.CYAN}{rand_pass}")
+                
+                log_info(f"Temporary Email Token: {Fore.GREEN}{inbox['token']}")
+                log_info(f"Registering, please wait...")
+
+                registration_data = {
+                    'email': inbox['address'],
+                    'password': rand_pass,
+                    'password_confirm': rand_pass,
+                    'invite_code': refcode
+                }
+
+                headers = {
+                    "User-Agent": self.ua.random,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "*/*",
+                    "Origin": "https://app.blockmesh.xyz",
+                    "Referer": "https://app.blockmesh.xyz/ext/register"
+                }
+
+                async with session.post(
+                    "https://app.blockmesh.xyz/register_api",
+                    data=registration_data,
+                    headers=headers,
+                    proxy=proxy
+                ) as response:
+                    response_text = await response.text()
+                    
+                    if response.status == 200:
+                        log_success(f"Registration successful!")
+                        confirmation_link = await self.handle_email_confirmation(session, inbox, proxy)
+                        self.save_credentials(
+                            inbox['address'],
+                            rand_pass,
+                            inbox['token'],
+                            confirmation_link if confirmation_link else "Not found",
+                            ip_address
+                        )
+                    elif response.status == 400:
+                        try:
+                            error_data = json.loads(response_text)
+                            error_message = error_data.get('message', 'Unknown error')
+                            log_error(f"Registration failed: {error_message}")
+                        except json.JSONDecodeError:
+                            log_error(f"Registration failed with status 400: {response_text}")
+                        return
+                    else:
+                        log_error(f"Unexpected response status: {response.status}")
+                        log_error(f"Response body: {response_text}")
+                        return
+
+        except Exception as e:
+            log_error(f"An error occurred: {e}")
+            return 
+
+    async def handle_email_confirmation(self, session, inbox, proxy):
+        try:
+            emails = await self.check_inbox_with_retry(inbox['token'])
+            
+            if not emails:
+                log_error("No emails received or inbox expired")
+                return None
+
+            log_info(f"Found {len(emails)} email(s) in inbox")
+
+            for email in emails:
+                log_info(f"Checking email: {email['subject']}")
+                
+                if "Confirmation" in email['subject'] or "confirm" in email['html']:
+                    log_success("Found confirmation email")
+                    
+                    import re
+                    aws_link_match = re.search(
+                        r'https://[a-z0-9.-]+\.awstrack\.me[^\s]+',
+                        email['html']
+                    )
+                    
+                    if aws_link_match:
+                        aws_tracking_link = aws_link_match.group(0)
+                        log_info(f"Found confirmation link: {Fore.CYAN}{aws_tracking_link}")
+
+                        confirmation_link = self.extract_confirmation_link(aws_tracking_link)
+                        log_info("Verifying Account...")
+
+                        async with session.get(confirmation_link, proxy=proxy) as conf_response:
+                            if conf_response.status == 200:
+                                log_success("Email confirmed successfully")
+                                return confirmation_link
+                            else:
+                                log_error(f"Email confirmation failed: {conf_response.status}")
+                                return None
+
+                        break
+                    else:
+                        log_error("No confirmation link found in email")
+                        return None
+
+        except Exception as e:
+            log_error(f"Error during email confirmation: {e}")
+            return None
+
+async def main():
+    display_header()
+    bot = RegistrationBot()
     
-    print(f"{Fore.LIGHTCYAN_EX}[{datetime.now().strftime('%H:%M:%S')}]{Fore.LIGHTCYAN_EX}[✓] DONE! Delay before next cycle. Not Stuck! Just wait and relax...{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}Welcome :) Please Enter Your Details{Style.RESET_ALL}")
+    ref_url = input(f"{Fore.GREEN}Input referral link{Fore.WHITE}: ")
+    ref_code = bot.extract_ref_code_from_url(ref_url)
     
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}Stopping ...")
+    num_registrations = int(input(f"{Fore.GREEN}Enter number of referrals{Fore.WHITE}: "))
+    print(f"{Fore.CYAN}{'─' * 50}\n")
+    
+    successful_registrations = 0
+    failed_registrations = 0
+    start_time = time.time()
+    
+    log_info(f"Starting {num_registrations} registrations with referral code: {Fore.YELLOW}{ref_code}")
+    
+    for i in range(num_registrations):
+        print(f"\n{Fore.CYAN}{'═' * 70}")
+        log_info(f"Processing registration {i + 1}/{num_registrations}")
+        print(f"{Fore.CYAN}{'═' * 70}")
+        try:
+            await bot.create_and_register(ref_code, i + 1)
+            successful_registrations += 1
+        except Exception as e:
+            failed_registrations += 1
+            log_error(f"Registration failed: {str(e)}")
+        
+        if i < num_registrations - 1:
+            await asyncio.sleep(1)
+
+    end_time = time.time()
+    duration = end_time - start_time
+    
+    print(f"\n{Fore.CYAN}{'═' * 70}")
+    print(f"{Fore.YELLOW}Registration Summary:{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{'─' * 50}")
+    print(f"{Fore.WHITE}Total Attempted: {Fore.CYAN}{num_registrations}")
+    print(f"{Fore.WHITE}Successful: {Fore.GREEN}{successful_registrations}")
+    print(f"{Fore.WHITE}Failed: {Fore.RED}{failed_registrations}")
+    print(f"{Fore.WHITE}Success Rate: {Fore.YELLOW}{(successful_registrations/num_registrations*100):.1f}%")
+    print(f"{Fore.WHITE}Total Duration: {Fore.YELLOW}{duration:.1f} seconds")
+    print(f"{Fore.WHITE}Average Time per Registration: {Fore.YELLOW}{(duration/num_registrations):.1f} seconds")
+    print(f"{Fore.CYAN}{'─' * 50}")
+    if successful_registrations > 0:
+        print(f"{Fore.GREEN}Successfully saved {successful_registrations} accounts to accounts.txt")
+    print(f"{Fore.CYAN}{'═' * 70}\n")
 
 if __name__ == "__main__":
     try:
-        main()
-    except Exception as e:
-        print(f"{Fore.RED}An error occurred: {str(e)}")
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        log_warning("Script terminated by user")
+        exit(0)
