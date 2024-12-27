@@ -45,7 +45,7 @@ def log_warning(message: str):
     print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.YELLOW}WARNING {Fore.WHITE}→ {message}")
 
 class TempMailAPI:
-    def __init__(self, api_key: str = ''):
+    def __init__(self, api_key: str = 'tm.1735308112808.10z33wf498dufxuxdzkrrjukrgbgs1ktfbqscqgzvkhjv29i'):
         self.api_key = api_key
         self.base_url = 'https://api.tempmail.lol'
 
@@ -66,7 +66,7 @@ class TempMailAPI:
 
 class RegistrationBot:
     def __init__(self):
-        self.API_KEY = ''
+        self.API_KEY = 'tm.1735308112808.10z33wf498dufxuxdzkrrjukrgbgs1ktfbqscqgzvkhjv29i'
         self.fake = Faker()
         self.ua = UserAgent()
         self.temp_mail = TempMailAPI(self.API_KEY)
