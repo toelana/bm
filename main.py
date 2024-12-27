@@ -45,9 +45,9 @@ def log_warning(message: str):
     print(f"{Fore.WHITE}[{Fore.CYAN}{timestamp}{Fore.WHITE}] {Fore.YELLOW}WARNING {Fore.WHITE}→ {message}")
 
 class TempMailAPI:
-    def __init__(self, api_key: str = 'tm.1735308112808.10z33wf498dufxuxdzkrrjukrgbgs1ktfbqscqgzvkhjv29i'):
+    def __init__(self, api_key: str = ''):
         self.api_key = api_key
-        self.base_url = 'https://api.tempmail.lol'
+        self.base_url = 'https://api.temp-mail.io'
 
     async def create_inbox(self) -> dict:
         async with aiohttp.ClientSession() as session:
@@ -66,7 +66,7 @@ class TempMailAPI:
 
 class RegistrationBot:
     def __init__(self):
-        self.API_KEY = 'tm.1735308112808.10z33wf498dufxuxdzkrrjukrgbgs1ktfbqscqgzvkhjv29i'
+        self.API_KEY = ''
         self.fake = Faker()
         self.ua = UserAgent()
         self.temp_mail = TempMailAPI(self.API_KEY)
